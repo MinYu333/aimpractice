@@ -33,97 +33,103 @@
 
   <!-- start / pause overlay -->
   <div id="overlay">
-    <div class="panel">
+    <div class="panel wide">
       <h1>AIM RANGE</h1>
 
-      <div class="row">
-        <label>모드</label>
-        <select id="opt-mode">
-          <option value="gridshot" selected>그리드샷 (표적 처치)</option>
-          <option value="tracking">트래킹 (추적 사격)</option>
-          <option value="flick">플릭 (반응 사격)</option>
-        </select>
-      </div>
-      <p class="mode-info" id="mode-info"></p>
+      <div class="panel-columns">
+        <div class="panel-col">
+          <div class="row">
+            <label>모드</label>
+            <select id="opt-mode">
+              <option value="gridshot" selected>그리드샷 (표적 처치)</option>
+              <option value="tracking">트래킹 (추적 사격)</option>
+              <option value="flick">플릭 (반응 사격)</option>
+            </select>
+          </div>
+          <p class="mode-info" id="mode-info"></p>
 
-      <div class="row">
-        <label>라운드 시간</label>
-        <select id="opt-duration">
-          <option value="30">30초</option>
-          <option value="60" selected>60초</option>
-          <option value="120">120초</option>
-          <option value="0">무제한</option>
-        </select>
-      </div>
+          <div class="row">
+            <label>라운드 시간</label>
+            <select id="opt-duration">
+              <option value="30">30초</option>
+              <option value="60" selected>60초</option>
+              <option value="120">120초</option>
+              <option value="0">무제한</option>
+            </select>
+          </div>
 
-      <div class="row">
-        <label>표적 개수</label>
-        <select id="opt-targets">
-          <option value="2">2</option>
-          <option value="3" selected>3</option>
-          <option value="4">4</option>
-          <option value="6">6</option>
-        </select>
-      </div>
+          <div class="row">
+            <label>표적 개수</label>
+            <select id="opt-targets">
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="4">4</option>
+              <option value="6">6</option>
+            </select>
+          </div>
 
-      <div class="row">
-        <label>이동 표적 비율</label>
-        <select id="opt-movingratio">
-          <option value="0">정지 표적만</option>
-          <option value="0.5" selected>혼합</option>
-          <option value="1">이동 표적만</option>
-        </select>
-      </div>
+          <div class="row">
+            <label>이동 표적 비율</label>
+            <select id="opt-movingratio">
+              <option value="0">정지 표적만</option>
+              <option value="0.5" selected>혼합</option>
+              <option value="1">이동 표적만</option>
+            </select>
+          </div>
 
-      <div class="row">
-        <label>무기</label>
-        <select id="opt-weapon">
-          <option value="sheriff">셰리프</option>
-          <option value="vandal" selected>밴달</option>
-          <option value="phantom">팬텀</option>
-        </select>
-      </div>
+          <div class="row">
+            <label>무기</label>
+            <select id="opt-weapon">
+              <option value="sheriff">셰리프</option>
+              <option value="vandal" selected>밴달</option>
+              <option value="phantom">팬텀</option>
+            </select>
+          </div>
 
-      <div class="row">
-        <label>조준선</label>
-        <select id="opt-crosshair">
-          <option value="both" selected>십자 + 점</option>
-          <option value="cross">십자</option>
-          <option value="dot">점</option>
-        </select>
-      </div>
+          <div class="row">
+            <label>조준선</label>
+            <select id="opt-crosshair">
+              <option value="both" selected>십자 + 점</option>
+              <option value="cross">십자</option>
+              <option value="dot">점</option>
+            </select>
+          </div>
 
-      <div class="row">
-        <label>음량</label>
-        <input type="range" id="opt-volume" min="0" max="100" step="1" value="70" />
-        <span id="volume-value" class="volume-value">70%</span>
-        <button type="button" id="btn-mute" class="mute-btn" aria-label="음소거">🔊</button>
-      </div>
-
-      <div class="sens-group">
-        <div class="row">
-          <label>마우스 DPI</label>
-          <input type="number" id="opt-dpi" min="100" max="30000" step="50" value="800" />
+          <div class="row">
+            <label>음량</label>
+            <input type="range" id="opt-volume" min="0" max="100" step="1" value="70" />
+            <span id="volume-value" class="volume-value">70%</span>
+            <button type="button" id="btn-mute" class="mute-btn" aria-label="음소거">🔊</button>
+          </div>
         </div>
-        <div class="row">
-          <label>발로란트 감도</label>
-          <input type="number" id="opt-valsens" min="0.01" max="10" step="0.01" value="0.5" />
-        </div>
-        <p class="sens-info" id="sens-info">cm/360: -- · 발로란트와 동일한 마우스 회전값으로 맞춰줍니다</p>
-        <div class="row">
-          <label>발로란트 FOV</label>
-          <input type="number" id="opt-fov" min="90" max="103" step="1" value="103" />
-        </div>
-        <p class="sens-info">발로란트와 동일한 가로 시야각(4:3 기준) 변환으로 화면 비율에 맞게 적용됩니다</p>
-      </div>
 
-      <div class="keybind-group">
-        <div class="keybind-header">
-          <label>키 설정</label>
-          <button type="button" id="btn-keybind-reset" class="keybind-reset-btn">기본값</button>
+        <div class="panel-col">
+          <div class="sens-group">
+            <div class="row">
+              <label>마우스 DPI</label>
+              <input type="number" id="opt-dpi" min="100" max="30000" step="50" value="800" />
+            </div>
+            <div class="row">
+              <label>발로란트 감도</label>
+              <input type="number" id="opt-valsens" min="0.01" max="10" step="0.01" value="0.5" />
+            </div>
+            <p class="sens-info" id="sens-info">cm/360: -- · 발로란트와 동일한 마우스 회전값으로 맞춰줍니다</p>
+            <div class="row">
+              <label>발로란트 FOV</label>
+              <input type="number" id="opt-fov" min="90" max="103" step="1" value="103" />
+            </div>
+            <p class="sens-info">발로란트와 동일한 가로 시야각(4:3 기준) 변환으로 화면 비율에 맞게 적용됩니다</p>
+          </div>
+
+          <div class="keybind-group">
+            <div class="keybind-header">
+              <label>키 설정</label>
+              <button type="button" id="btn-keybind-reset" class="keybind-reset-btn">기본값</button>
+            </div>
+            <div id="keybind-list"></div>
+            <p class="sens-info">버튼을 클릭한 뒤 원하는 키를 누르세요 (ESC: 취소)</p>
+          </div>
         </div>
-        <div id="keybind-list"></div>
-        <p class="sens-info">버튼을 클릭한 뒤 원하는 키를 누르세요 (ESC: 취소)</p>
       </div>
 
       <button id="btn-start">클릭해서 시작 (마우스 잠금)</button>
