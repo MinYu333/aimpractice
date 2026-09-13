@@ -253,6 +253,70 @@ input[type="range"] {
 }
 .sens-info strong { color: #ff9aa3; }
 
+.keybind-group {
+  margin: 4px 0 14px;
+  padding: 12px 12px 10px;
+  background: #1a1c22;
+  border: 1px solid #262932;
+  border-radius: 7px;
+}
+.keybind-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.keybind-header label {
+  font-size: 13px;
+  color: #c7cbd4;
+}
+.keybind-reset-btn {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid #343842;
+  border-radius: 5px;
+  background: #1f222a;
+  color: #9aa0ad;
+  font-size: 11px;
+  cursor: pointer;
+}
+.keybind-reset-btn:hover {
+  background: #262932;
+  color: #eaeaf0;
+}
+.keybind-row {
+  margin-bottom: 8px;
+}
+.keybind-row:last-child {
+  margin-bottom: 0;
+}
+.keybind-btn {
+  flex: none;
+  min-width: 74px;
+  padding: 5px 10px;
+  border: 1px solid #343842;
+  border-radius: 5px;
+  background: #1f222a;
+  color: #eaeaf0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+.keybind-btn:hover {
+  background: #262932;
+}
+.keybind-btn.listening {
+  background: #ff4655;
+  color: #fff;
+  border-color: #ff4655;
+  animation: keybind-pulse 1s ease-in-out infinite;
+}
+@keyframes keybind-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .mode-info {
   margin: -8px 0 14px;
   font-size: 11.5px;

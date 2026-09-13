@@ -187,10 +187,37 @@ function accelerate(vel, wishDir, wishSpeed, accel, dt) {
 }
 const keys = {};
 
-// While actually playing (pointer locked), WASD/Space/1-3 need to reach the game, not the
-// browser - Space would otherwise scroll the page. Only suppressed during pointer lock so
-// typing into the settings inputs (DPI, sensitivity, etc.) is unaffected.
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'Digit1', 'Digit2', 'Digit3']);
+// ---------- rebindable key bindings ----------
+// Movement/jump/crouch are remappable from the settings panel; weapon slots (1/2/3) and ESC
+// aren't exposed there, same as most games keep those fixed.
+const DEFAULT_KEYBINDS = {
+  forward: 'KeyW',
+  back: 'KeyS',
+  left: 'KeyA',
+  right: 'KeyD',
+  jump: 'Space',
+  crouch: 'ControlLeft', // matches Valorant's default crouch bind
+};
+const KEYBIND_LABELS = { forward: '앞으로', back: '뒤로', left: '왼쪽', right: '오른쪽', jump: '점프', crouch: '앉기' };
+const KEYBIND_STORAGE_KEY = 'aimrange-keybinds';
+let keyBinds = { ...DEFAULT_KEYBINDS };
+try {
+  const savedBinds = JSON.parse(localStorage.getItem(KEYBIND_STORAGE_KEY));
+  if (savedBinds && typeof savedBinds === 'object') keyBinds = { ...DEFAULT_KEYBINDS, ...savedBinds };
+} catch { /* corrupt/missing storage - fall back to defaults */ }
+
+// While actually playing (pointer locked), the bound movement keys/1-3 need to reach the game,
+// not the browser - Space would otherwise scroll the page. Only suppressed during pointer lock
+// so typing into the settings inputs (DPI, sensitivity, etc.) is unaffected. Rebuilt whenever a
+// binding changes, since it has to track whatever codes are currently assigned.
+const GAME_KEYS = new Set();
+function refreshGameKeys() {
+  GAME_KEYS.clear();
+  Object.values(keyBinds).forEach((code) => GAME_KEYS.add(code));
+  ['Digit1', 'Digit2', 'Digit3'].forEach((code) => GAME_KEYS.add(code));
+}
+refreshGameKeys();
+
 document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (document.pointerLockElement === canvas && GAME_KEYS.has(e.code)) {
@@ -266,7 +293,20 @@ document.addEventListener('mousemove', (e) => {
   player.pitch = Math.max(-limit, Math.min(limit, player.pitch));
 });
 
+// Crouch (default Ctrl, rebindable via keyBinds.crouch). CROUCH_EYE_MULT/CROUCH_SPEED_MULT are
+// tuned approximations - unlike the run speed/damage numbers elsewhere in this file, no official
+// Valorant value for these was found. CROUCH_SPREAD_MULT (0.85) IS an official wiki number
+// (Vandal/Phantom's crouch spread multiplier), applied here to both weapons for simplicity.
+let crouchBlend = 0; // 0 = standing, 1 = fully crouched, eased each frame for a smooth camera drop
+const CROUCH_BLEND_RATE = 10;
+const CROUCH_EYE_MULT = 0.65;
+const CROUCH_SPEED_MULT = 0.5;
+const CROUCH_SPREAD_MULT = 0.85;
+
 function updatePlayer(dt) {
+  const crouching = gameMode !== 'tracking' && !!keys[keyBinds.crouch];
+  crouchBlend += ((crouching ? 1 : 0) - crouchBlend) * Math.min(1, CROUCH_BLEND_RATE * dt);
+
   // Tracking mode keeps the player anchored in place, like Aim Lab's strafe-track drills -
   // it's meant to isolate pure mouse tracking, so WASD is ignored (and velocity cleared) while
   // it's active.
@@ -276,10 +316,10 @@ function updatePlayer(dt) {
     const forward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
     const right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
     const wishDir = new THREE.Vector3();
-    if (keys['KeyW']) wishDir.add(forward);
-    if (keys['KeyS']) wishDir.sub(forward);
-    if (keys['KeyD']) wishDir.add(right);
-    if (keys['KeyA']) wishDir.sub(right);
+    if (keys[keyBinds.forward]) wishDir.add(forward);
+    if (keys[keyBinds.back]) wishDir.sub(forward);
+    if (keys[keyBinds.right]) wishDir.add(right);
+    if (keys[keyBinds.left]) wishDir.sub(right);
     if (wishDir.lengthSq() > 0) wishDir.normalize();
 
     // Friction only runs on the ground (mid-air you keep your momentum, same as Source/Valorant
@@ -287,7 +327,8 @@ function updatePlayer(dt) {
     if (player.grounded) applyGroundFriction(player.vel, dt);
     if (wishDir.lengthSq() > 0) {
       const weapon = WEAPONS[currentWeaponKey];
-      const maxSpeed = isAiming && weapon.ads ? player.speed * weapon.ads.moveSpeedMult : player.speed;
+      let maxSpeed = isAiming && weapon.ads ? player.speed * weapon.ads.moveSpeedMult : player.speed;
+      if (crouching) maxSpeed *= CROUCH_SPEED_MULT;
       accelerate(player.vel, wishDir, maxSpeed, GROUND_ACCEL, dt);
     }
   }
@@ -301,7 +342,7 @@ function updatePlayer(dt) {
 
   // Vertical: jump impulse (blocked in tracking mode along with WASD), then gravity, then
   // land the instant feet reach whatever surface (floor or a box top) is below.
-  if (gameMode !== 'tracking' && keys['Space'] && player.grounded) {
+  if (gameMode !== 'tracking' && keys[keyBinds.jump] && player.grounded) {
     player.vy = JUMP_SPEED;
     player.grounded = false;
   }
@@ -316,7 +357,8 @@ function updatePlayer(dt) {
     player.grounded = false;
   }
 
-  camera.position.set(player.pos.x, player.footY + player.eyeHeight, player.pos.z);
+  const eyeHeight = THREE.MathUtils.lerp(player.eyeHeight, player.eyeHeight * CROUCH_EYE_MULT, crouchBlend);
+  camera.position.set(player.pos.x, player.footY + eyeHeight, player.pos.z);
   camera.rotation.set(player.pitch, player.yaw, 0);
 }
 
@@ -1100,7 +1142,8 @@ function computeShotDirection() {
 
   // Jumping/falling is far less accurate than just moving on the ground, matching Valorant's
   // harsh airborne accuracy penalty - it takes priority over (doesn't stack with) run spread.
-  const spreadDeg = !player.grounded ? AIR_SPREAD_DEG : isPlayerMoving() ? MOVE_SPREAD_DEG : 0;
+  let spreadDeg = !player.grounded ? AIR_SPREAD_DEG : isPlayerMoving() ? MOVE_SPREAD_DEG : 0;
+  if (keys[keyBinds.crouch]) spreadDeg *= CROUCH_SPREAD_MULT;
   if (spreadDeg > 0) {
     const maxRad = spreadDeg * (Math.PI / 180);
     const r = Math.sqrt(Math.random()) * maxRad;
@@ -1424,6 +1467,74 @@ muteBtn.addEventListener('click', () => {
   refreshVolumeUI();
 });
 refreshVolumeUI();
+
+// ---------- key binding UI ----------
+function keyCodeLabel(code) {
+  if (!code) return '-';
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code.startsWith('Digit')) return code.slice(5);
+  const special = {
+    Space: 'Space', ControlLeft: 'Ctrl', ControlRight: 'RCtrl',
+    ShiftLeft: 'Shift', ShiftRight: 'RShift', AltLeft: 'Alt', AltRight: 'RAlt',
+    ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Backquote: '`',
+  };
+  return special[code] || code;
+}
+
+const keybindListEl = document.getElementById('keybind-list');
+const keybindResetBtn = document.getElementById('btn-keybind-reset');
+let rebindingAction = null;
+
+function renderKeybindRows() {
+  keybindListEl.innerHTML = '';
+  Object.keys(DEFAULT_KEYBINDS).forEach((action) => {
+    const row = document.createElement('div');
+    row.className = 'row keybind-row';
+    const label = document.createElement('label');
+    label.textContent = KEYBIND_LABELS[action];
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'keybind-btn';
+    if (rebindingAction === action) {
+      btn.textContent = '키를 누르세요...';
+      btn.classList.add('listening');
+    } else {
+      btn.textContent = keyCodeLabel(keyBinds[action]);
+    }
+    btn.addEventListener('click', () => {
+      if (rebindingAction) return; // one rebind at a time
+      rebindingAction = action;
+      renderKeybindRows();
+    });
+    row.appendChild(label);
+    row.appendChild(btn);
+    keybindListEl.appendChild(row);
+  });
+}
+renderKeybindRows();
+
+keybindResetBtn.addEventListener('click', () => {
+  if (rebindingAction) return;
+  keyBinds = { ...DEFAULT_KEYBINDS };
+  localStorage.setItem(KEYBIND_STORAGE_KEY, JSON.stringify(keyBinds));
+  refreshGameKeys();
+  renderKeybindRows();
+});
+
+// Capture phase + stopPropagation so a key pressed while rebinding never reaches the gameplay
+// keydown handler (which would otherwise record it in `keys` or trigger a weapon switch).
+document.addEventListener('keydown', (e) => {
+  if (!rebindingAction) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.code !== 'Escape') {
+    keyBinds[rebindingAction] = e.code;
+    localStorage.setItem(KEYBIND_STORAGE_KEY, JSON.stringify(keyBinds));
+    refreshGameKeys();
+  }
+  rebindingAction = null;
+  renderKeybindRows();
+}, true);
 
 let state = 'idle'; // idle | running | paused | ended
 let gameMode = 'gridshot'; // gridshot | tracking | flick
