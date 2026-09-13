@@ -12,6 +12,17 @@ const camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerH
 camera.rotation.order = 'YXZ';
 scene.add(camera); // camera must be in the scene graph for its child (the weapon model) to render
 
+// Valorant's FOV slider (90-103) is a *horizontal* FOV measured at a 4:3 base, then widescreen
+// gets extra horizontal FOV added on top while vertical FOV stays fixed ("Hor+" scaling) - which
+// is exactly what three.js's PerspectiveCamera already does with a fixed vertical fov + aspect.
+// So converting Valorant's horizontal/4:3 number into the equivalent constant vertical fov once
+// reproduces the same view at any aspect ratio without any extra scaling code.
+function valorantFovToVerticalFov(hFovDeg) {
+  const hFovRad = hFovDeg * (Math.PI / 180);
+  const vFovRad = 2 * Math.atan(Math.tan(hFovRad / 2) / (4 / 3));
+  return vFovRad * (180 / Math.PI);
+}
+
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -124,12 +135,16 @@ makeStall(-14, -14);
 makeStall(14, 14);
 
 // ---------- player ----------
+// Eye height bumped up to match a Valorant-scale character (~1.9m tall agent, eyes a bit below
+// the top of the head) instead of the shorter placeholder height this started with - see the
+// matching buildHumanoid() scale-up below so target heads land at a consistent headshot line.
 const player = {
-  pos: new THREE.Vector3(0, 1.7, 12),
+  pos: new THREE.Vector3(0, 1.8, 12),
   yaw: 0,
   pitch: 0,
-  eyeHeight: 1.7,
+  eyeHeight: 1.8,
   speed: 7,
+  vel: new THREE.Vector3(), // horizontal velocity - see applyGroundFriction/accelerate below
   footY: 0, // height of the ground/box surface currently stood on
   vy: 0, // vertical velocity, for jump/gravity
   grounded: true,
@@ -138,6 +153,38 @@ const MOVE_MARGIN = 1.2;
 const PLAYER_RADIUS = 0.4;
 const GRAVITY = -20;
 const JUMP_SPEED = 7;
+
+// Source/Valorant-style ground movement: friction bleeds off velocity every tick you're
+// grounded, and accelerate() ramps velocity toward the wish direction. Together these give
+// "braking" (release keys and slide to a stop over a few frames instead of stopping dead) and
+// counter-strafing (tap the *opposite* key and your velocity gets cancelled almost instantly,
+// since accelerate() then has to close a much bigger gap: wishSpeed - (-currentSpeed)).
+const GROUND_ACCEL = 10;
+const GROUND_FRICTION = 6;
+const STOP_SPEED = 1; // m/s - below this, friction drags speed straight to 0 instead of asymptoting toward it forever
+// Valorant doesn't spread your shots at all once your actual speed drops under a walking-speed
+// threshold, even if a move key is still held - "deadzone" tech is counter-strafing just enough
+// to duck under this speed and get an accurate shot off without waiting for a full stop.
+const MOVE_DEADZONE_SPEED = 1.5; // m/s
+
+function applyGroundFriction(vel, dt) {
+  const speed = Math.hypot(vel.x, vel.z);
+  if (speed < 0.0001) { vel.x = 0; vel.z = 0; return; }
+  const control = Math.max(speed, STOP_SPEED);
+  const newSpeed = Math.max(0, speed - control * GROUND_FRICTION * dt);
+  const scale = newSpeed / speed;
+  vel.x *= scale;
+  vel.z *= scale;
+}
+
+function accelerate(vel, wishDir, wishSpeed, accel, dt) {
+  const currentSpeed = vel.x * wishDir.x + vel.z * wishDir.z;
+  const addSpeed = wishSpeed - currentSpeed;
+  if (addSpeed <= 0) return;
+  const accelSpeed = Math.min(accel * dt * wishSpeed, addSpeed);
+  vel.x += accelSpeed * wishDir.x;
+  vel.z += accelSpeed * wishDir.z;
+}
 const keys = {};
 
 // While actually playing (pointer locked), WASD/Space/1-3 need to reach the game, not the
@@ -189,9 +236,12 @@ function resolveHorizontalCollision(x, z, footY) {
 const VALORANT_YAW = 0.07;
 let radPerCount = 0.5 * VALORANT_YAW * (Math.PI / 180);
 
+// "Moving" now means actual speed past the deadzone, not just a key being held - holding two
+// opposite keys (or braking to a near-stop) reports false the moment velocity decays enough,
+// which is what lets counter-strafing/deadzone shots land accurately below.
 function isPlayerMoving() {
   if (gameMode === 'tracking') return false; // player is anchored in place for tracking drills
-  return !!(keys['KeyW'] || keys['KeyA'] || keys['KeyS'] || keys['KeyD']);
+  return player.vel.x * player.vel.x + player.vel.z * player.vel.z > MOVE_DEADZONE_SPEED * MOVE_DEADZONE_SPEED;
 }
 
 // Chrome occasionally reports a spurious huge movementX/Y right when pointer lock engages
@@ -217,22 +267,30 @@ document.addEventListener('mousemove', (e) => {
 });
 
 function updatePlayer(dt) {
-  const forward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-  const right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
-  const move = new THREE.Vector3();
   // Tracking mode keeps the player anchored in place, like Aim Lab's strafe-track drills -
-  // it's meant to isolate pure mouse tracking, so WASD is ignored while it's active.
-  if (gameMode !== 'tracking') {
-    if (keys['KeyW']) move.add(forward);
-    if (keys['KeyS']) move.sub(forward);
-    if (keys['KeyD']) move.add(right);
-    if (keys['KeyA']) move.sub(right);
-    if (move.lengthSq() > 0) move.normalize().multiplyScalar(player.speed * dt);
+  // it's meant to isolate pure mouse tracking, so WASD is ignored (and velocity cleared) while
+  // it's active.
+  if (gameMode === 'tracking') {
+    player.vel.set(0, 0, 0);
+  } else {
+    const forward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+    const right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+    const wishDir = new THREE.Vector3();
+    if (keys['KeyW']) wishDir.add(forward);
+    if (keys['KeyS']) wishDir.sub(forward);
+    if (keys['KeyD']) wishDir.add(right);
+    if (keys['KeyA']) wishDir.sub(right);
+    if (wishDir.lengthSq() > 0) wishDir.normalize();
+
+    // Friction only runs on the ground (mid-air you keep your momentum, same as Source/Valorant
+    // air control), so releasing keys or counter-strafing only brakes you while grounded.
+    if (player.grounded) applyGroundFriction(player.vel, dt);
+    if (wishDir.lengthSq() > 0) accelerate(player.vel, wishDir, player.speed, GROUND_ACCEL, dt);
   }
 
   const bound = ARENA_HALF - MOVE_MARGIN;
-  let nx = Math.max(-bound, Math.min(bound, player.pos.x + move.x));
-  let nz = Math.max(-bound, Math.min(bound, player.pos.z + move.z));
+  let nx = Math.max(-bound, Math.min(bound, player.pos.x + player.vel.x * dt));
+  let nz = Math.max(-bound, Math.min(bound, player.pos.z + player.vel.z * dt));
   const resolved = resolveHorizontalCollision(nx, nz, player.footY);
   player.pos.x = resolved.x;
   player.pos.z = resolved.z;
@@ -529,7 +587,8 @@ function spawnMuzzleFlash(pos) {
 const muzzleLight = new THREE.PointLight(0xffb347, 0, 4, 2);
 scene.add(muzzleLight);
 
-// ---------- targets (human-sized dummies, ~1.8m tall like a Valorant agent) ----------
+// ---------- targets (human-sized dummies, ~1.9m tall like a Valorant agent, head near the
+// player's own 1.8m eye height so head-level flicks feel like aiming at another player) ----------
 const TARGET_BOUND = ARENA_HALF - 3;
 let movingRatio = 0.5;
 
@@ -546,23 +605,23 @@ function buildHumanoid(color) {
   const group = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.25, roughness: 0.5 });
 
-  const legGeo = new THREE.CylinderGeometry(0.09, 0.11, 0.85, 8);
+  const legGeo = new THREE.CylinderGeometry(0.098, 0.12, 0.92, 8);
   const legL = new THREE.Mesh(legGeo, mat);
-  legL.position.set(-0.13, 0.425, 0);
+  legL.position.set(-0.14, 0.46, 0);
   const legR = new THREE.Mesh(legGeo, mat);
-  legR.position.set(0.13, 0.425, 0);
+  legR.position.set(0.14, 0.46, 0);
 
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.27, 0.6, 8), mat);
-  torso.position.set(0, 1.15, 0);
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.29, 0.65, 8), mat);
+  torso.position.set(0, 1.25, 0);
 
-  const armGeo = new THREE.CylinderGeometry(0.06, 0.07, 0.62, 8);
+  const armGeo = new THREE.CylinderGeometry(0.065, 0.076, 0.67, 8);
   const armL = new THREE.Mesh(armGeo, mat);
-  armL.position.set(-0.32, 1.11, 0);
+  armL.position.set(-0.35, 1.2, 0);
   const armR = new THREE.Mesh(armGeo, mat);
-  armR.position.set(0.32, 1.11, 0);
+  armR.position.set(0.35, 1.2, 0);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 14), mat);
-  head.position.set(0, 1.6, 0);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 14), mat);
+  head.position.set(0, 1.74, 0);
   head.userData.part = 'head';
 
   [legL, legR, torso, armL, armR].forEach((m) => { m.userData.part = 'body'; });
@@ -817,8 +876,9 @@ let headshots = 0;
 let reactionTimes = [];
 let trackScoreSum = 0; // tracking mode only: weighted on-target ticks (head counts double)
 
-// Moving-while-shooting inaccuracy, like Valorant's run-and-gun bloom: standing still is
-// pinpoint, holding a movement key throws the shot off inside a random cone. Being airborne
+// Moving-while-shooting inaccuracy, like Valorant's run-and-gun bloom: standing still (or
+// slow enough to be under MOVE_DEADZONE_SPEED, via braking/counter-strafing) is pinpoint,
+// actually moving above that speed throws the shot off inside a random cone. Being airborne
 // (jumping or just falling off a crate) is punished much harder than running.
 const MOVE_SPREAD_DEG = 3;
 const AIR_SPREAD_DEG = 9;
@@ -1332,6 +1392,15 @@ optDpi.addEventListener('input', updateSensFromInputs);
 optValSens.addEventListener('input', updateSensFromInputs);
 updateSensFromInputs();
 
+const optFov = document.getElementById('opt-fov');
+function updateFovFromInput() {
+  const hFov = Math.min(103, Math.max(90, parseFloat(optFov.value) || 103));
+  camera.fov = valorantFovToVerticalFov(hFov);
+  camera.updateProjectionMatrix();
+}
+optFov.addEventListener('input', updateFovFromInput);
+updateFovFromInput();
+
 let lastGameMode = null;
 function readSettings() {
   gameMode = optMode.value;
@@ -1346,6 +1415,7 @@ function readSettings() {
   duration = parseInt(optDuration.value, 10);
   movingRatio = parseFloat(optMovingRatio.value);
   updateSensFromInputs();
+  updateFovFromInput();
   selectWeapon(optWeapon.value);
   if (gameMode === 'tracking') {
     // Snap to a fixed vantage point facing the lane, so tracking always starts the same way.
