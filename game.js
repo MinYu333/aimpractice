@@ -824,6 +824,23 @@ const MOVE_SPREAD_DEG = 3;
 const AIR_SPREAD_DEG = 9;
 
 let audioCtx = null;
+let masterGain = null;
+
+// Every sound source connects to this instead of audioCtx.destination directly, so the
+// volume slider/mute button can scale everything at once without touching each sound.
+const VOLUME_STORAGE_KEY = 'aimrange-volume';
+const MUTE_STORAGE_KEY = 'aimrange-muted';
+let masterVolume = 70;
+let isMuted = false;
+{
+  const savedVolume = parseFloat(localStorage.getItem(VOLUME_STORAGE_KEY));
+  if (!Number.isNaN(savedVolume)) masterVolume = Math.min(100, Math.max(0, savedVolume));
+  isMuted = localStorage.getItem(MUTE_STORAGE_KEY) === 'true';
+}
+function applyMasterVolume() {
+  if (masterGain) masterGain.gain.value = isMuted ? 0 : masterVolume / 100;
+}
+
 function playBeep(freq) {
   if (!audioCtx) return;
   const osc = audioCtx.createOscillator();
@@ -832,7 +849,7 @@ function playBeep(freq) {
   osc.frequency.value = freq;
   gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
-  osc.connect(gain).connect(audioCtx.destination);
+  osc.connect(gain).connect(masterGain);
   osc.start();
   osc.stop(audioCtx.currentTime + 0.08);
 }
@@ -888,7 +905,7 @@ function playGunshot(weaponKey) {
   const crackGain = audioCtx.createGain();
   crackGain.gain.setValueAtTime(isSuppressed ? 0.35 : 0.8, now);
   crackGain.gain.exponentialRampToValueAtTime(0.001, now + crackDur);
-  crack.connect(crackFilter).connect(crackShaper).connect(crackGain).connect(audioCtx.destination);
+  crack.connect(crackFilter).connect(crackShaper).connect(crackGain).connect(masterGain);
   crack.start(now);
   crack.stop(now + crackDur + 0.01);
 
@@ -903,7 +920,7 @@ function playGunshot(weaponKey) {
   const bodyGain = audioCtx.createGain();
   bodyGain.gain.setValueAtTime(isSuppressed ? 0.28 : 0.55, now);
   bodyGain.gain.exponentialRampToValueAtTime(0.001, now + bodyDur);
-  body.connect(bodyFilter).connect(bodyGain).connect(audioCtx.destination);
+  body.connect(bodyFilter).connect(bodyGain).connect(masterGain);
   body.start(now);
   body.stop(now + bodyDur + 0.01);
 
@@ -915,7 +932,7 @@ function playGunshot(weaponKey) {
   const thumpGain = audioCtx.createGain();
   thumpGain.gain.setValueAtTime(isSuppressed ? 0.22 : 0.6, now);
   thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
-  thump.connect(thumpGain).connect(audioCtx.destination);
+  thump.connect(thumpGain).connect(masterGain);
   thump.start(now);
   thump.stop(now + 0.12);
 
@@ -932,7 +949,7 @@ function playGunshot(weaponKey) {
     tailGain.gain.setValueAtTime(0.001, now);
     tailGain.gain.linearRampToValueAtTime(isPistol ? 0.12 : 0.22, now + 0.02);
     tailGain.gain.exponentialRampToValueAtTime(0.001, now + tailDur);
-    tail.connect(tailFilter).connect(tailGain).connect(audioCtx.destination);
+    tail.connect(tailFilter).connect(tailGain).connect(masterGain);
     tail.start(now);
     tail.stop(now + tailDur + 0.01);
   }
@@ -951,7 +968,7 @@ function playKillConfirm() {
     gain.gain.setValueAtTime(0.001, t0);
     gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.015);
     gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.15);
-    osc.connect(gain).connect(audioCtx.destination);
+    osc.connect(gain).connect(masterGain);
     osc.start(t0);
     osc.stop(t0 + 0.16);
   });
@@ -1112,7 +1129,7 @@ function ensureTrackAudio() {
   trackFilter.frequency.value = 450;
   trackGain = audioCtx.createGain();
   trackGain.gain.value = 0;
-  trackOsc.connect(trackFilter).connect(trackGain).connect(audioCtx.destination);
+  trackOsc.connect(trackFilter).connect(trackGain).connect(masterGain);
   trackOsc.start();
 }
 function updateTrackAudio(onTarget) {
@@ -1272,6 +1289,31 @@ function applyCrosshairStyle() {
 optCrosshair.addEventListener('change', applyCrosshairStyle);
 applyCrosshairStyle();
 
+const optVolume = document.getElementById('opt-volume');
+const volumeValueEl = document.getElementById('volume-value');
+const muteBtn = document.getElementById('btn-mute');
+function refreshVolumeUI() {
+  optVolume.value = masterVolume;
+  volumeValueEl.textContent = `${Math.round(masterVolume)}%`;
+  muteBtn.textContent = isMuted || masterVolume === 0 ? '🔇' : '🔊';
+  muteBtn.classList.toggle('muted', isMuted);
+}
+optVolume.addEventListener('input', () => {
+  masterVolume = parseFloat(optVolume.value);
+  if (masterVolume > 0 && isMuted) isMuted = false;
+  localStorage.setItem(VOLUME_STORAGE_KEY, String(masterVolume));
+  localStorage.setItem(MUTE_STORAGE_KEY, String(isMuted));
+  applyMasterVolume();
+  refreshVolumeUI();
+});
+muteBtn.addEventListener('click', () => {
+  isMuted = !isMuted;
+  localStorage.setItem(MUTE_STORAGE_KEY, String(isMuted));
+  applyMasterVolume();
+  refreshVolumeUI();
+});
+refreshVolumeUI();
+
 let state = 'idle'; // idle | running | paused | ended
 let gameMode = 'gridshot'; // gridshot | tracking | flick
 let duration = 60;
@@ -1331,7 +1373,12 @@ function resetRound() {
 
 function startLock() {
   readSettings();
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.connect(audioCtx.destination);
+    applyMasterVolume();
+  }
   canvas.requestPointerLock();
 }
 

@@ -212,6 +212,31 @@ input[type="range"] {
   accent-color: #ff4655;
 }
 
+.volume-value {
+  font-size: 12px;
+  color: #9aa0ad;
+  width: 34px;
+  text-align: right;
+  flex: none;
+}
+
+.mute-btn {
+  flex: none;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #343842;
+  border-radius: 5px;
+  background: #1f222a;
+  color: #eaeaf0;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mute-btn:hover {
+  background: #262932;
+}
+
 .sens-group {
   margin: 4px 0 14px;
   padding: 12px 12px 4px;
