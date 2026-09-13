@@ -42,10 +42,10 @@ html, body {
 }
 .ch-top, .ch-bottom { width: 2px; height: 6px; left: -1px; }
 .ch-left, .ch-right { height: 2px; width: 6px; top: -1px; }
-.ch-top { top: -13px; }
-.ch-bottom { top: 7px; }
-.ch-left { left: -13px; }
-.ch-right { left: 7px; }
+.ch-top { top: -9px; }
+.ch-bottom { top: 3px; }
+.ch-left { left: -9px; }
+.ch-right { left: 3px; }
 
 /* crosshair style presets */
 #crosshair.style-dot .ch-line { display: none; }
@@ -120,10 +120,10 @@ html, body {
 }
 
 /* crosshair expands while moving, mirroring Valorant's movement-inaccuracy cue */
-#crosshair.spread .ch-top { top: -19px; }
-#crosshair.spread .ch-bottom { top: 13px; }
-#crosshair.spread .ch-left { left: -19px; }
-#crosshair.spread .ch-right { left: 13px; }
+#crosshair.spread .ch-top { top: -15px; }
+#crosshair.spread .ch-bottom { top: 9px; }
+#crosshair.spread .ch-left { left: -15px; }
+#crosshair.spread .ch-right { left: 9px; }
 #crosshair .ch-line { transition: top 0.12s ease, left 0.12s ease; }
 
 /* HUD */
