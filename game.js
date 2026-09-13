@@ -143,7 +143,7 @@ const player = {
   yaw: 0,
   pitch: 0,
   eyeHeight: 1.8,
-  speed: 7,
+  speed: 5.4, // matches Valorant's actual rifle/sidearm run speed (5.4 m/sec, per the official wiki)
   vel: new THREE.Vector3(), // horizontal velocity - see applyGroundFriction/accelerate below
   footY: 0, // height of the ground/box surface currently stood on
   vy: 0, // vertical velocity, for jump/gravity
@@ -285,7 +285,11 @@ function updatePlayer(dt) {
     // Friction only runs on the ground (mid-air you keep your momentum, same as Source/Valorant
     // air control), so releasing keys or counter-strafing only brakes you while grounded.
     if (player.grounded) applyGroundFriction(player.vel, dt);
-    if (wishDir.lengthSq() > 0) accelerate(player.vel, wishDir, player.speed, GROUND_ACCEL, dt);
+    if (wishDir.lengthSq() > 0) {
+      const weapon = WEAPONS[currentWeaponKey];
+      const maxSpeed = isAiming && weapon.ads ? player.speed * weapon.ads.moveSpeedMult : player.speed;
+      accelerate(player.vel, wishDir, maxSpeed, GROUND_ACCEL, dt);
+    }
   }
 
   const bound = ARENA_HALF - MOVE_MARGIN;
@@ -405,21 +409,30 @@ function buildPhantom() {
 // assuming a 150 HP target (100 base + 50 heavy-shield armor). Real per-patch numbers vary
 // slightly; these are representative, not pulled from a live data file.
 const TARGET_MAX_HP = 150;
+// Damage/range/fire-rate numbers below are pulled from the official Valorant wiki's per-weapon
+// pages, not estimated. Where the wiki lists no falloff bracket past its last range (Vandal has
+// none at all; Sheriff/Phantom stop at 50m), the last entry here just repeats that final value
+// instead of guessing a further drop-off.
+// `ads` (aim-down-sights) is only present on the two rifles - the Sheriff (and pistols in
+// general) has no ADS mode in Valorant. Zoom/move-speed/fire-rate multipliers are the official
+// wiki's numbers for both rifles (1.25x zoom, 76% move speed, 90% fire rate while aiming).
 const WEAPONS = {
   sheriff: {
     name: '셰리프', auto: false, fireInterval: 0.25, tracer: false, build: buildSheriff,
-    ranges: [30, 50], bodyDmg: [55, 48, 42], headDmg: [159, 145, 132],
+    ranges: [30, 50], bodyDmg: [55, 50, 50], headDmg: [159, 145, 145],
     recoil: null, // semi-auto pistol: no escalating spray pattern
   },
   vandal: {
     name: '밴달', auto: true, fireInterval: 1 / 9.75, tracer: true, build: buildVandal,
-    ranges: [30, 50], bodyDmg: [40, 35, 30], headDmg: [160, 160, 160], // Vandal one-taps headshots at any range
+    ranges: [30, 50], bodyDmg: [40, 40, 40], headDmg: [160, 160, 160], // no falloff at all - Vandal one-taps headshots at any range
     recoil: { climbShots: 8, maxVertical: 5.5, maxHorizontal: 2.6, swayFreq: 0.9 },
+    ads: { zoom: 1.25, moveSpeedMult: 0.76, fireRateMult: 0.9 },
   },
   phantom: {
     name: '팬텀', auto: true, fireInterval: 1 / 11, tracer: false, build: buildPhantom,
-    ranges: [15, 30], bodyDmg: [39, 33, 29], headDmg: [156, 132, 115], // falls off sooner than Vandal
+    ranges: [20, 50], bodyDmg: [39, 35, 35], headDmg: [156, 140, 140], // falls off sooner than Vandal
     recoil: { climbShots: 10, maxVertical: 4, maxHorizontal: 1.8, swayFreq: 1.1 }, // tighter than Vandal
+    ads: { zoom: 1.25, moveSpeedMult: 0.76, fireRateMult: 0.9 },
   },
 };
 
@@ -453,6 +466,8 @@ function damageFor(weapon, isHead, distance) {
 
 const GUN_BASE_POS = new THREE.Vector3(0.26, -0.24, -0.5);
 const GUN_BASE_ROT = new THREE.Euler(0.03, -0.18, 0.05);
+// Raised-and-centered ADS pose the gun eases toward while aiming (right-click), on rifles only.
+const GUN_ADS_POS = new THREE.Vector3(0, -0.15, -0.32);
 
 Object.entries(WEAPONS).forEach(([key, weapon]) => {
   const group = weapon.build();
@@ -474,6 +489,7 @@ function selectWeapon(key) {
   WEAPONS[currentWeaponKey].group.visible = true;
   gunKick = 0;
   burstIndex = 0;
+  if (!WEAPONS[currentWeaponKey].ads) isAiming = false; // Sheriff has no ADS - drop aim on switch
   weaponHudEl.textContent = WEAPONS[currentWeaponKey].name.toUpperCase();
 }
 
@@ -487,22 +503,46 @@ document.addEventListener('keydown', (e) => {
 let gunKick = 0;
 let bobPhase = 0;
 
+// Right-click aim-down-sights, rifles only (see WEAPONS[key].ads) - isAiming is the raw held
+// state, aimBlend eases toward it each frame so the zoom/pose transition isn't an instant snap.
+let isAiming = false;
+let aimBlend = 0;
+const AIM_BLEND_RATE = 12;
+
+// Narrows camera.fov from baseFov toward baseFov/zoom as aimBlend eases in, so the FOV setting
+// (updateFovFromInput) and ADS zoom (per-weapon, see WEAPONS) compose instead of one overwriting
+// the other.
+function updateCameraZoom() {
+  const weapon = WEAPONS[currentWeaponKey];
+  const zoom = weapon.ads ? 1 + (weapon.ads.zoom - 1) * aimBlend : 1;
+  camera.fov = baseFov / zoom;
+  camera.updateProjectionMatrix();
+}
+
 function updateWeaponView(dt) {
-  const gunGroup = WEAPONS[currentWeaponKey].group;
+  const weapon = WEAPONS[currentWeaponKey];
+  const gunGroup = weapon.group;
+  const aimTarget = isAiming && weapon.ads ? 1 : 0;
+  aimBlend += (aimTarget - aimBlend) * Math.min(1, AIM_BLEND_RATE * dt);
+  updateCameraZoom();
+
   const moving = isPlayerMoving();
   bobPhase += dt * (moving ? 9 : 2.2);
-  const bobAmt = moving ? 0.014 : 0.004;
+  const bobAmt = (moving ? 0.014 : 0.004) * (1 - aimBlend * 0.7); // steadier while aiming
   const bobX = Math.sin(bobPhase) * bobAmt;
   const bobY = Math.abs(Math.cos(bobPhase)) * bobAmt * 0.8;
 
   gunKick *= Math.pow(0.001, dt); // fast exponential decay back to 0
 
-  gunGroup.position.set(
-    GUN_BASE_POS.x + bobX,
-    GUN_BASE_POS.y + bobY + gunKick * 0.05,
-    GUN_BASE_POS.z + gunKick * 0.1
+  const posX = THREE.MathUtils.lerp(GUN_BASE_POS.x, GUN_ADS_POS.x, aimBlend) + bobX;
+  const posY = THREE.MathUtils.lerp(GUN_BASE_POS.y, GUN_ADS_POS.y, aimBlend) + bobY + gunKick * 0.05;
+  const posZ = THREE.MathUtils.lerp(GUN_BASE_POS.z, GUN_ADS_POS.z, aimBlend) + gunKick * 0.1;
+  gunGroup.position.set(posX, posY, posZ);
+  gunGroup.rotation.set(
+    GUN_BASE_ROT.x - gunKick * 0.3,
+    THREE.MathUtils.lerp(GUN_BASE_ROT.y, 0, aimBlend),
+    THREE.MathUtils.lerp(GUN_BASE_ROT.z, 0, aimBlend)
   );
-  gunGroup.rotation.set(GUN_BASE_ROT.x - gunKick * 0.3, GUN_BASE_ROT.y, GUN_BASE_ROT.z);
 }
 
 // ---------- muzzle flash + bullet tracer ----------
@@ -879,9 +919,11 @@ let trackScoreSum = 0; // tracking mode only: weighted on-target ticks (head cou
 // Moving-while-shooting inaccuracy, like Valorant's run-and-gun bloom: standing still (or
 // slow enough to be under MOVE_DEADZONE_SPEED, via braking/counter-strafing) is pinpoint,
 // actually moving above that speed throws the shot off inside a random cone. Being airborne
-// (jumping or just falling off a crate) is punished much harder than running.
-const MOVE_SPREAD_DEG = 3;
-const AIR_SPREAD_DEG = 9;
+// (jumping or just falling off a crate) is punished much harder than running. Degrees match
+// Valorant's official "Running"/"Airborne" spread-penalty values (+6°/+10°) - there's no
+// separate walk state here, movement is binary past the deadzone, so the running number applies.
+const MOVE_SPREAD_DEG = 6;
+const AIR_SPREAD_DEG = 10;
 
 let audioCtx = null;
 let masterGain = null;
@@ -1245,28 +1287,39 @@ let lastShotTime = -Infinity;
 function tryShoot() {
   const now = performance.now() / 1000;
   const weapon = WEAPONS[currentWeaponKey];
-  if (now - lastShotTime < weapon.fireInterval) return;
+  const interval = isAiming && weapon.ads ? weapon.fireInterval / weapon.ads.fireRateMult : weapon.fireInterval;
+  if (now - lastShotTime < interval) return;
   lastShotTime = now;
   shoot();
 }
 
+canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // right-click drives ADS, not a browser menu
+
 canvas.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
   if (document.pointerLockElement !== canvas || state !== 'running') return;
-  triggerHeld = true;
-  if (gameMode !== 'tracking') tryShoot();
+  if (e.button === 0) {
+    triggerHeld = true;
+    if (gameMode !== 'tracking') tryShoot();
+  } else if (e.button === 2) {
+    isAiming = true;
+  }
 });
 canvas.addEventListener('mouseup', (e) => {
   if (e.button === 0) {
     triggerHeld = false;
     burstIndex = 0;
     if (gameMode === 'tracking') silenceTrackAudio();
+  } else if (e.button === 2) {
+    isAiming = false;
   }
 });
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement !== canvas) {
     triggerHeld = false;
     burstIndex = 0;
+    isAiming = false;
+    aimBlend = 0; // snap the zoom back instantly - no eased animate() ticks while paused to do it
+    updateCameraZoom();
     silenceTrackAudio();
   }
 });
@@ -1393,10 +1446,12 @@ optValSens.addEventListener('input', updateSensFromInputs);
 updateSensFromInputs();
 
 const optFov = document.getElementById('opt-fov');
+let baseFov = 90; // the non-ADS vertical fov derived from the FOV setting - updateCameraZoom()
+                   // narrows camera.fov from this while aiming, it never overwrites this value.
 function updateFovFromInput() {
   const hFov = Math.min(103, Math.max(90, parseFloat(optFov.value) || 103));
-  camera.fov = valorantFovToVerticalFov(hFov);
-  camera.updateProjectionMatrix();
+  baseFov = valorantFovToVerticalFov(hFov);
+  updateCameraZoom();
 }
 optFov.addEventListener('input', updateFovFromInput);
 updateFovFromInput();
