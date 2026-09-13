@@ -573,6 +573,51 @@ function buildHumanoid(color) {
   return group;
 }
 
+// Keeps targets out of the crates/stalls the same way resolveHorizontalCollision keeps the
+// player out of them - pushes the target's (circular) footprint out of any overlapping box, and
+// mirrors its velocity off the box's normal so a moving/tracking target bounces away instead of
+// getting stuck pushing into a wall it can't enter.
+const TARGET_RADIUS = 0.4;
+function resolveTargetBoxCollision(t) {
+  for (const b of collisionBoxes) {
+    const x = t.mesh.position.x;
+    const z = t.mesh.position.z;
+    const closestX = Math.max(b.minX, Math.min(x, b.maxX));
+    const closestZ = Math.max(b.minZ, Math.min(z, b.maxZ));
+    const dx = x - closestX;
+    const dz = z - closestZ;
+    const distSq = dx * dx + dz * dz;
+    if (distSq >= TARGET_RADIUS * TARGET_RADIUS) continue;
+    let nx, nz;
+    if (distSq > 1e-6) {
+      const dist = Math.sqrt(distSq);
+      nx = dx / dist;
+      nz = dz / dist;
+      const push = TARGET_RADIUS - dist;
+      t.mesh.position.x += nx * push;
+      t.mesh.position.z += nz * push;
+    } else {
+      // Center landed exactly inside the box (e.g. spawn point) - push out the nearest side.
+      const distToMinX = x - b.minX;
+      const distToMaxX = b.maxX - x;
+      const distToMinZ = z - b.minZ;
+      const distToMaxZ = b.maxZ - z;
+      const min = Math.min(distToMinX, distToMaxX, distToMinZ, distToMaxZ);
+      if (min === distToMinX) { nx = -1; nz = 0; t.mesh.position.x = b.minX - TARGET_RADIUS; }
+      else if (min === distToMaxX) { nx = 1; nz = 0; t.mesh.position.x = b.maxX + TARGET_RADIUS; }
+      else if (min === distToMinZ) { nx = 0; nz = -1; t.mesh.position.z = b.minZ - TARGET_RADIUS; }
+      else { nx = 0; nz = 1; t.mesh.position.z = b.maxZ + TARGET_RADIUS; }
+    }
+    if (t.vel) {
+      const dot = t.vel.x * nx + t.vel.z * nz;
+      if (dot < 0) {
+        t.vel.x -= 2 * dot * nx;
+        t.vel.z -= 2 * dot * nz;
+      }
+    }
+  }
+}
+
 class TargetManager {
   constructor() {
     this.targets = [];
@@ -616,6 +661,7 @@ class TargetManager {
       data.vel = new THREE.Vector3(Math.cos(angle) * speed, 0, Math.sin(angle) * speed);
     }
 
+    resolveTargetBoxCollision(data);
     humanoid.traverse((obj) => { if (obj.isMesh) obj.userData.targetData = data; });
 
     this.targets.push(data);
@@ -645,6 +691,7 @@ class TargetManager {
       spawnTime: performance.now(),
       lifetime: 1100 + Math.random() * 500,
     };
+    resolveTargetBoxCollision(data);
     humanoid.traverse((obj) => { if (obj.isMesh) obj.userData.targetData = data; });
     this.targets.push(data);
     return data;
@@ -674,6 +721,7 @@ class TargetManager {
       speedChangeTimer: 0.4 + Math.random() * 0.8,
       turnTimer: 1.2 + Math.random() * 1.8,
     };
+    resolveTargetBoxCollision(data);
     humanoid.traverse((obj) => { if (obj.isMesh) obj.userData.targetData = data; });
     this.targets.push(data);
     return data;
@@ -725,6 +773,7 @@ class TargetManager {
           t.mesh.position.z = Math.max(TRACK_LANE.zMin, Math.min(TRACK_LANE.zMax, t.mesh.position.z));
           t.vel.z *= -1;
         }
+        resolveTargetBoxCollision(t);
         t.mesh.rotation.y = Math.atan2(t.vel.x, t.vel.z);
         continue;
       }
@@ -739,6 +788,7 @@ class TargetManager {
           t.vel.z *= -1;
           t.mesh.position.z = Math.max(-TARGET_BOUND, Math.min(TARGET_BOUND, t.mesh.position.z));
         }
+        resolveTargetBoxCollision(t);
         t.mesh.rotation.y = Math.atan2(t.vel.x, t.vel.z);
       }
       if (now - t.spawnTime > t.lifetime) {
