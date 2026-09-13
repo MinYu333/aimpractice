@@ -160,7 +160,7 @@ const JUMP_SPEED = 7;
 // counter-strafing (tap the *opposite* key and your velocity gets cancelled almost instantly,
 // since accelerate() then has to close a much bigger gap: wishSpeed - (-currentSpeed)).
 const GROUND_ACCEL = 10;
-const GROUND_FRICTION = 6;
+const GROUND_FRICTION = 10; // was 6 - tightened for a snappier stop, closer to Valorant's feel (no official value exists to match exactly)
 const STOP_SPEED = 1; // m/s - below this, friction drags speed straight to 0 instead of asymptoting toward it forever
 // Valorant doesn't spread your shots at all once your actual speed drops under a walking-speed
 // threshold, even if a move key is still held - "deadzone" tech is counter-strafing just enough
@@ -574,7 +574,7 @@ function updateWeaponView(dt) {
   const bobX = Math.sin(bobPhase) * bobAmt;
   const bobY = Math.abs(Math.cos(bobPhase)) * bobAmt * 0.8;
 
-  gunKick *= Math.pow(0.001, dt); // fast exponential decay back to 0
+  gunKick *= Math.pow(1e-7, dt); // exponential decay back to 0 - snappier than before so the kick from a Sheriff's shot (0.25s between shots) has actually cleared by the next one
 
   const posX = THREE.MathUtils.lerp(GUN_BASE_POS.x, GUN_ADS_POS.x, aimBlend) + bobX;
   const posY = THREE.MathUtils.lerp(GUN_BASE_POS.y, GUN_ADS_POS.y, aimBlend) + bobY + gunKick * 0.05;
