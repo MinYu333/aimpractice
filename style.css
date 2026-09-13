@@ -1,0 +1,317 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0c0d10;
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+  color: #eaeaf0;
+  user-select: none;
+}
+
+#scene {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* crosshair */
+#crosshair {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+.ch-dot {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: #ff4655;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.ch-line {
+  position: absolute;
+  background: #ff4655;
+}
+.ch-top, .ch-bottom { width: 2px; height: 6px; left: -1px; }
+.ch-left, .ch-right { height: 2px; width: 6px; top: -1px; }
+.ch-top { top: -13px; }
+.ch-bottom { top: 7px; }
+.ch-left { left: -13px; }
+.ch-right { left: 7px; }
+
+/* crosshair style presets */
+#crosshair.style-dot .ch-line { display: none; }
+#crosshair.style-cross .ch-dot { display: none; }
+
+#hitmarker {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%) scale(0.6);
+  pointer-events: none;
+  z-index: 21;
+  opacity: 0;
+}
+#hitmarker::before, #hitmarker::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: #ffd400;
+}
+#hitmarker::before { transform: translateY(-50%) rotate(45deg); }
+#hitmarker::after { transform: translateY(-50%) rotate(-45deg); }
+#hitmarker.show {
+  animation: hitpop 0.18s ease-out;
+}
+#hitmarker.headshot::before, #hitmarker.headshot::after {
+  background: #ff4655;
+}
+@keyframes hitpop {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.4); }
+}
+
+#headshot-text {
+  position: fixed;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #ff4655;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 22;
+}
+#headshot-text.show {
+  animation: hspop 0.5s ease-out;
+}
+@keyframes hspop {
+  0% { opacity: 1; transform: translate(-50%, -70%) scale(0.9); }
+  100% { opacity: 0; transform: translate(-50%, -130%) scale(1.05); }
+}
+
+#weapon-hud {
+  position: fixed;
+  right: 22px;
+  bottom: 20px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #eaeaf0;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+  pointer-events: none;
+  z-index: 15;
+}
+
+/* crosshair expands while moving, mirroring Valorant's movement-inaccuracy cue */
+#crosshair.spread .ch-top { top: -19px; }
+#crosshair.spread .ch-bottom { top: 13px; }
+#crosshair.spread .ch-left { left: -19px; }
+#crosshair.spread .ch-right { left: 13px; }
+#crosshair .ch-line { transition: top 0.12s ease, left 0.12s ease; }
+
+/* HUD */
+#hud {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 15;
+  pointer-events: none;
+}
+#hud-time {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+}
+#hud-stats {
+  margin-top: 4px;
+  font-size: 16px;
+  color: #b7bcc9;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+#hud-score { color: #ff4655; font-weight: 700; }
+
+.hidden { display: none !important; }
+
+/* overlays */
+#overlay, #results {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 11, 14, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+.panel {
+  width: 380px;
+  max-width: 90vw;
+  background: #16181d;
+  border: 1px solid #2a2d35;
+  border-radius: 10px;
+  padding: 28px 30px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.panel h1 {
+  margin: 0 0 18px;
+  font-size: 26px;
+  letter-spacing: 3px;
+  color: #ff4655;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.row label {
+  font-size: 13px;
+  color: #c7cbd4;
+  white-space: nowrap;
+}
+
+.row select, .row input[type="range"], .row input[type="number"] {
+  flex: 1;
+  max-width: 190px;
+}
+
+select, input[type="number"] {
+  background: #1f222a;
+  color: #eaeaf0;
+  border: 1px solid #343842;
+  border-radius: 5px;
+  padding: 5px 6px;
+}
+
+input[type="range"] {
+  accent-color: #ff4655;
+}
+
+.sens-group {
+  margin: 4px 0 14px;
+  padding: 12px 12px 4px;
+  background: #1a1c22;
+  border: 1px solid #262932;
+  border-radius: 7px;
+}
+.sens-group .row { margin-bottom: 10px; }
+.sens-info {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: #8991a1;
+  line-height: 1.4;
+}
+.sens-info strong { color: #ff9aa3; }
+
+.mode-info {
+  margin: -8px 0 14px;
+  font-size: 11.5px;
+  color: #8991a1;
+  line-height: 1.4;
+}
+
+select:disabled, input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+#btn-start, #btn-restart {
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  border: none;
+  border-radius: 6px;
+  background: #ff4655;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+#btn-start:hover, #btn-restart:hover {
+  background: #ff6270;
+}
+
+.hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: #767c8a;
+  text-align: center;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin: 20px 0 8px;
+}
+.result-grid div {
+  background: #1f222a;
+  border-radius: 6px;
+  padding: 12px 8px;
+  text-align: center;
+}
+.result-grid span {
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+  color: #ff4655;
+}
+.result-grid label {
+  display: block;
+  font-size: 11px;
+  color: #9aa0ad;
+  margin-top: 4px;
+  letter-spacing: 1px;
+}
+
+.final-score {
+  text-align: center;
+  margin: 4px 0 6px;
+  padding: 14px;
+  background: #1f222a;
+  border-radius: 8px;
+}
+.final-score #res-score {
+  font-size: 34px;
+  font-weight: 800;
+  color: #ff4655;
+}
+.final-score .score-max {
+  font-size: 18px;
+  color: #9aa0ad;
+  margin-left: 2px;
+}
+.final-score .score-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #9aa0ad;
+}
