@@ -460,7 +460,7 @@ const TARGET_MAX_HP = 150;
 // wiki's numbers for both rifles (1.25x zoom, 76% move speed, 90% fire rate while aiming).
 const WEAPONS = {
   sheriff: {
-    name: '셰리프', auto: false, fireInterval: 0.25, tracer: false, build: buildSheriff,
+    name: '셰리프', auto: false, fireInterval: 0.25, tracer: true, build: buildSheriff,
     ranges: [30, 50], bodyDmg: [55, 50, 50], headDmg: [159, 145, 145],
     recoil: null, // semi-auto pistol: no escalating spray pattern
   },
