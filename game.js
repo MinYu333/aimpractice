@@ -1301,7 +1301,7 @@ canvas.addEventListener('mousedown', (e) => {
     triggerHeld = true;
     if (gameMode !== 'tracking') tryShoot();
   } else if (e.button === 2) {
-    isAiming = true;
+    isAiming = !isAiming; // toggle, not hold - click once to aim, click again to drop it
   }
 });
 canvas.addEventListener('mouseup', (e) => {
@@ -1309,8 +1309,6 @@ canvas.addEventListener('mouseup', (e) => {
     triggerHeld = false;
     burstIndex = 0;
     if (gameMode === 'tracking') silenceTrackAudio();
-  } else if (e.button === 2) {
-    isAiming = false;
   }
 });
 document.addEventListener('pointerlockchange', () => {
