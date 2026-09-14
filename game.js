@@ -1617,7 +1617,10 @@ function startLock() {
 }
 
 startBtn.addEventListener('click', () => {
-  if (state === 'idle' || state === 'ended') {
+  // Resuming from pause with a different mode selected should start the round over
+  // (fresh timer/stats), not carry over the elapsed time from the previous mode.
+  const modeChangedWhilePaused = state === 'paused' && optMode.value !== gameMode;
+  if (state === 'idle' || state === 'ended' || modeChangedWhilePaused) {
     resetRound();
   }
   startLock();
