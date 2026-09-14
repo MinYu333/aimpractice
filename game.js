@@ -12,14 +12,18 @@ const camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerH
 camera.rotation.order = 'YXZ';
 scene.add(camera); // camera must be in the scene graph for its child (the weapon model) to render
 
-// Valorant's FOV slider (90-103) is a *horizontal* FOV measured at a 4:3 base, then widescreen
-// gets extra horizontal FOV added on top while vertical FOV stays fixed ("Hor+" scaling) - which
-// is exactly what three.js's PerspectiveCamera already does with a fixed vertical fov + aspect.
-// So converting Valorant's horizontal/4:3 number into the equivalent constant vertical fov once
-// reproduces the same view at any aspect ratio without any extra scaling code.
+// Valorant actually has NO adjustable FOV setting - it's engine-locked to a constant vertical
+// FOV of 70.53 deg for every player, which is where the commonly-quoted "103" figure comes from
+// (that's just the resulting *horizontal* FOV on a 16:9 screen, not a 4:3 base like Source-engine
+// games such as CS/Overwatch use for their 90-103 sliders - a distinction this file previously
+// got wrong, converting the horizontal number as if it were a 4:3 figure, which produced a
+// vertical FOV of ~86.6 deg instead of the real 70.53 and made the game feel noticeably
+// "wider"/less sensitive than actual Valorant for the same mouse counts). Converting through a
+// 16:9 base instead reproduces the real fixed vertical FOV, and three.js's fixed-vertical-fov +
+// aspect projection already reproduces Valorant's Hor+ scaling at any other aspect ratio.
 function valorantFovToVerticalFov(hFovDeg) {
   const hFovRad = hFovDeg * (Math.PI / 180);
-  const vFovRad = 2 * Math.atan(Math.tan(hFovRad / 2) / (4 / 3));
+  const vFovRad = 2 * Math.atan(Math.tan(hFovRad / 2) / (16 / 9));
   return vFovRad * (180 / Math.PI);
 }
 
