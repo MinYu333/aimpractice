@@ -162,6 +162,12 @@ const JUMP_SPEED = 7;
 const GROUND_ACCEL = 10;
 const GROUND_FRICTION = 10; // was 6 - tightened for a snappier stop, closer to Valorant's feel (no official value exists to match exactly)
 const STOP_SPEED = 1; // m/s - below this, friction drags speed straight to 0 instead of asymptoting toward it forever
+// Valorant doesn't let you build NEW speed in the air - whatever horizontal speed you have the
+// instant you leave the ground carries through untouched until you land (running off a ledge or
+// jumping mid-sprint keeps your run speed; jumping from a standstill keeps you near-stationary).
+// AIR_ACCEL only lets you gently redirect that carried speed (a slight curve while airborne,
+// matching Valorant's air control), never grow it - see updatePlayer's airborneSpeedCap.
+const AIR_ACCEL = 2;
 // Valorant doesn't spread your shots at all once your actual speed drops under a walking-speed
 // threshold, even if a move key is still held - "deadzone" tech is counter-strafing just enough
 // to duck under this speed and get an accurate shot off without waiting for a full stop.
@@ -184,6 +190,18 @@ function accelerate(vel, wishDir, wishSpeed, accel, dt) {
   const accelSpeed = Math.min(accel * dt * wishSpeed, addSpeed);
   vel.x += accelSpeed * wishDir.x;
   vel.z += accelSpeed * wishDir.z;
+}
+
+// accelerate() only checks speed along the current wish direction, so a direction change (mouse
+// turn) can make it look like you're still under wishSpeed even when your actual total speed
+// already reached it - this rescales back down to wishSpeed whenever that happens.
+function clampSpeed(vel, maxSpeed) {
+  const speed = Math.hypot(vel.x, vel.z);
+  if (speed > maxSpeed) {
+    const scale = maxSpeed / speed;
+    vel.x *= scale;
+    vel.z *= scale;
+  }
 }
 const keys = {};
 
@@ -303,9 +321,12 @@ const CROUCH_EYE_MULT = 0.65;
 const CROUCH_SPEED_MULT = 0.5;
 const CROUCH_SPREAD_MULT = 0.85;
 
+let airborneSpeedCap = 0; // horizontal speed the player took off with - see updatePlayer
+
 function updatePlayer(dt) {
   const crouching = gameMode !== 'tracking' && !!keys[keyBinds.crouch];
   crouchBlend += ((crouching ? 1 : 0) - crouchBlend) * Math.min(1, CROUCH_BLEND_RATE * dt);
+  const wasGrounded = player.grounded;
 
   // Tracking mode keeps the player anchored in place, like Aim Lab's strafe-track drills -
   // it's meant to isolate pure mouse tracking, so WASD is ignored (and velocity cleared) while
@@ -322,24 +343,24 @@ function updatePlayer(dt) {
     if (keys[keyBinds.left]) wishDir.sub(right);
     if (wishDir.lengthSq() > 0) wishDir.normalize();
 
-    // Friction only runs on the ground (mid-air you keep your momentum, same as Source/Valorant
-    // air control), so releasing keys or counter-strafing only brakes you while grounded.
-    if (player.grounded) applyGroundFriction(player.vel, dt);
-    if (wishDir.lengthSq() > 0) {
-      const weapon = WEAPONS[currentWeaponKey];
-      let maxSpeed = isAiming && weapon.ads ? player.speed * weapon.ads.moveSpeedMult : player.speed;
-      if (crouching) maxSpeed *= CROUCH_SPEED_MULT;
-      accelerate(player.vel, wishDir, maxSpeed, GROUND_ACCEL, dt);
-      // accelerate() only adds speed along the CURRENT wishDir, so turning the mouse while
-      // airborne (no friction to bleed it back off) keeps making that projection look "under
-      // wishSpeed" from a new angle each frame - classic Quake/Source strafe-jump exploit,
-      // letting horizontal speed climb without bound. Clamp it back to maxSpeed every frame.
-      const speedNow = Math.hypot(player.vel.x, player.vel.z);
-      if (speedNow > maxSpeed) {
-        const scale = maxSpeed / speedNow;
-        player.vel.x *= scale;
-        player.vel.z *= scale;
+    if (player.grounded) {
+      // Normal ground movement: friction bleeds speed off, accelerate() ramps it back up toward
+      // the wish direction, capped at the weapon/crouch/ADS-adjusted run speed.
+      applyGroundFriction(player.vel, dt);
+      if (wishDir.lengthSq() > 0) {
+        const weapon = WEAPONS[currentWeaponKey];
+        let maxSpeed = isAiming && weapon.ads ? player.speed * weapon.ads.moveSpeedMult : player.speed;
+        if (crouching) maxSpeed *= CROUCH_SPEED_MULT;
+        accelerate(player.vel, wishDir, maxSpeed, GROUND_ACCEL, dt);
+        clampSpeed(player.vel, maxSpeed);
       }
+    } else if (wishDir.lengthSq() > 0 && airborneSpeedCap > 0) {
+      // Valorant air movement: no friction (you can't stop mid-air) and no new momentum either -
+      // accelerate()/clampSpeed target airborneSpeedCap (whatever speed you had at takeoff, not
+      // the run speed), so this can only gently curve your existing velocity, never grow it. A
+      // jump from a standing start (airborneSpeedCap 0) gets no air control at all, same as Valorant.
+      accelerate(player.vel, wishDir, airborneSpeedCap, AIR_ACCEL, dt);
+      clampSpeed(player.vel, airborneSpeedCap);
     }
   }
 
@@ -365,6 +386,11 @@ function updatePlayer(dt) {
     player.grounded = true;
   } else {
     player.grounded = false;
+  }
+  if (wasGrounded && !player.grounded) {
+    // Just left the ground (jumped, or walked off a ledge) - lock in the speed to carry through
+    // the air. Captured after this frame's ground accel/friction, so it's the actual takeoff speed.
+    airborneSpeedCap = Math.hypot(player.vel.x, player.vel.z);
   }
 
   const eyeHeight = THREE.MathUtils.lerp(player.eyeHeight, player.eyeHeight * CROUCH_EYE_MULT, crouchBlend);
