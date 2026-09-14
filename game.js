@@ -330,6 +330,16 @@ function updatePlayer(dt) {
       let maxSpeed = isAiming && weapon.ads ? player.speed * weapon.ads.moveSpeedMult : player.speed;
       if (crouching) maxSpeed *= CROUCH_SPEED_MULT;
       accelerate(player.vel, wishDir, maxSpeed, GROUND_ACCEL, dt);
+      // accelerate() only adds speed along the CURRENT wishDir, so turning the mouse while
+      // airborne (no friction to bleed it back off) keeps making that projection look "under
+      // wishSpeed" from a new angle each frame - classic Quake/Source strafe-jump exploit,
+      // letting horizontal speed climb without bound. Clamp it back to maxSpeed every frame.
+      const speedNow = Math.hypot(player.vel.x, player.vel.z);
+      if (speedNow > maxSpeed) {
+        const scale = maxSpeed / speedNow;
+        player.vel.x *= scale;
+        player.vel.z *= scale;
+      }
     }
   }
 
