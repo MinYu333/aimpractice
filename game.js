@@ -162,12 +162,17 @@ const JUMP_SPEED = 7;
 const GROUND_ACCEL = 10;
 const GROUND_FRICTION = 10; // was 6 - tightened for a snappier stop, closer to Valorant's feel (no official value exists to match exactly)
 const STOP_SPEED = 1; // m/s - below this, friction drags speed straight to 0 instead of asymptoting toward it forever
-// Valorant doesn't let you build NEW speed in the air - whatever horizontal speed you have the
-// instant you leave the ground carries through untouched until you land (running off a ledge or
-// jumping mid-sprint keeps your run speed; jumping from a standstill keeps you near-stationary).
-// AIR_ACCEL only lets you gently redirect that carried speed (a slight curve while airborne,
-// matching Valorant's air control), never grow it - see updatePlayer's airborneSpeedCap.
-const AIR_ACCEL = 2;
+// Valorant doesn't let you accelerate to full run speed in the air - whatever horizontal speed
+// you have the instant you leave the ground is (basically) the ceiling for the rest of the jump,
+// so a running jump carries a lot of air mobility and a standing jump barely turns at all. Real
+// Valorant still gives a small baseline of air control even off a dead-stop jump though (jump
+// peeking works by running up to an edge, jumping, then strafing back over it - so a standing
+// jump used for other things shouldn't leave you totally frozen either), mirroring Unreal
+// Engine's CharacterMovementComponent, whose AirControl never fully zeroes out either. AIR_ACCEL
+// paces how fast you can redirect toward that ceiling each frame; see updatePlayer's
+// airborneSpeedCap/MIN_AIR_CONTROL_SPEED for how the ceiling itself is picked.
+const AIR_ACCEL = 4;
+const MIN_AIR_CONTROL_SPEED = 2; // m/s - floor for air control even off a standing jump
 // Valorant doesn't spread your shots at all once your actual speed drops under a walking-speed
 // threshold, even if a move key is still held - "deadzone" tech is counter-strafing just enough
 // to duck under this speed and get an accurate shot off without waiting for a full stop.
@@ -354,13 +359,15 @@ function updatePlayer(dt) {
         accelerate(player.vel, wishDir, maxSpeed, GROUND_ACCEL, dt);
         clampSpeed(player.vel, maxSpeed);
       }
-    } else if (wishDir.lengthSq() > 0 && airborneSpeedCap > 0) {
-      // Valorant air movement: no friction (you can't stop mid-air) and no new momentum either -
-      // accelerate()/clampSpeed target airborneSpeedCap (whatever speed you had at takeoff, not
-      // the run speed), so this can only gently curve your existing velocity, never grow it. A
-      // jump from a standing start (airborneSpeedCap 0) gets no air control at all, same as Valorant.
-      accelerate(player.vel, wishDir, airborneSpeedCap, AIR_ACCEL, dt);
-      clampSpeed(player.vel, airborneSpeedCap);
+    } else if (wishDir.lengthSq() > 0) {
+      // Valorant air movement: no friction (you can't stop mid-air), and the ceiling for
+      // redirecting/building speed is whichever is bigger - the speed carried from takeoff, or a
+      // small baseline (MIN_AIR_CONTROL_SPEED) so a standing jump still lets you nudge yourself a
+      // little (real jump peeks rely on being able to strafe back over the edge you jumped from).
+      // Either way you can't reach full run speed unless you already had it when you left the ground.
+      const airTarget = Math.max(airborneSpeedCap, MIN_AIR_CONTROL_SPEED);
+      accelerate(player.vel, wishDir, airTarget, AIR_ACCEL, dt);
+      clampSpeed(player.vel, airTarget);
     }
   }
 
